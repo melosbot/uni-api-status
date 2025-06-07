@@ -1,4 +1,3 @@
-<<<<<<< Updated upstream
 # uni-api-status
 一个用于查询和可视化展示 UniAPI 使用统计数据的 Web 应用程序。
 =======
@@ -117,16 +116,16 @@
 1.  **运行容器**:
     ```bash
     docker run -d \
-   --name uniapi-frontend \
-   -p 3000:3000 \
-   -e NODE_ENV=production \
-   -e /path/to/your/uniapi/data:/app/data:ro \
-   -e /path/to/your/uniapi/api.yaml:/app/api.yaml \
-   # -e PORT=3000 # 可选
-   # 将宿主机数据目录映射到容器，确保路径正确
-   -v /path/to/your/uniapi/data:/app/data:ro \
-   -v /path/to/your/uniapi/api.yaml:/app/api.yaml \
-   ghcr.io/melosbot/uni-api-status:latest
+    --name uniapi-frontend \
+    -p 3000:3000 \
+    -e NODE_ENV=production \
+    -e /path/to/your/uniapi/data:/app/data:ro \
+    -e /path/to/your/uniapi/api.yaml:/app/api.yaml \
+    # -e PORT=3000 # 可选
+    # 将宿主机数据目录映射到容器，确保路径正确
+    -v /path/to/your/uniapi/data:/app/data:ro \
+    -v /path/to/your/uniapi/api.yaml:/app/api.yaml \
+    ghcr.io/melosbot/uni-api-status:latest
     ```
     同样，请确保宿主机路径 (`/path/to/your/uniapi`) 正确，并且 Docker 具有读写权限。
 
@@ -239,4 +238,3 @@
 ## 📄 许可证
 
 本项目采用 [MIT License](https://opensource.org/licenses/MIT) 授权。
->>>>>>> Stashed changes
