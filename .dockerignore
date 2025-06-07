@@ -1,0 +1,31 @@
+# Git 文件夹
+.git
+
+# Node.js 依赖 - 这些会在 Dockerfile 的 builder 阶段重新安装
+node_modules
+
+# Next.js 构建产物目录 - 会在 builder 阶段生成
+.next
+
+# Docker 相关文件 - 不需要复制到镜像内部
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# 文档文件
+README.md
+
+# 操作系统或编辑器特定的文件/目录
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
+.idea/
+
+# 环境变量文件 - 不应包含在镜像中，应通过运行时环境变量注入
+.env*
+!.env.example # 如果有示例文件，可以取消忽略
+
+# 其他可能不需要的文件 (根据你的项目调整)
+# coverage/
+# temp/
