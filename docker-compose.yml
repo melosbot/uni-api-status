@@ -1,0 +1,15 @@
+services:
+  uniapi-frontend:
+    image: uniapi-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - API_YAML_PATH=/app/data/api.yaml
+      - STATS_DB_PATH=/app/data/stats.db
+    volumes:
+      - /path/to/your/uniapi/data:/app/data:ro
+      - /path/to/your/uniapi/api.yaml:/app/api.yaml
+    restart: unless-stopped
+    container_name: uniapi-frontend
