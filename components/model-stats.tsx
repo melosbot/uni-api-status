@@ -135,10 +135,8 @@ export function ModelStats({ apiKey }: ModelStatsProps) {
 
    const renderNoData = () => (
      <Card>
-        <CardContent className="p-6 text-center text-muted-foreground flex flex-col items-center justify-center min-h-[150px]">
-           <AlertTriangle className="w-10 h-10 mb-4 text-yellow-500" />
-           <p>暂无模型统计数据</p>
-            <p className="text-xs mt-1">请确保有日志生成或检查 API Key 是否正确</p>
+         <CardContent className="p-6 text-center text-muted-foreground flex flex-col items-center justify-center">
+           <p>暂无符合条件的模型数据</p>
         </CardContent>
      </Card>
    );
@@ -168,7 +166,7 @@ export function ModelStats({ apiKey }: ModelStatsProps) {
                           <TableHead className="w-[120px] text-right">提示 Tokens</TableHead>
                           <TableHead className="w-[120px] text-right">完成 Tokens</TableHead>
                           <TableHead className="w-[120px] text-right">平均处理耗时</TableHead>
-                          <TableHead className="w-[120px] text-right">平均首次响应</TableHead>
+                          <TableHead className="w-[120px] text-right">平均首字响应</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -252,7 +250,7 @@ export function ModelStats({ apiKey }: ModelStatsProps) {
                                    </div>
                                    {/* Tokens (Full Width) */}
                                    <div className="flex justify-between items-center col-span-2 pt-1">
-                                       <span className="text-muted-foreground">Tokens (P/C/T):</span>
+                                       <span className="text-muted-foreground">Tokens (提示/完成/总计):</span>
                                         <Tooltip>
                                           <TooltipTrigger asChild>
                                               {/* Use short format for mobile */}

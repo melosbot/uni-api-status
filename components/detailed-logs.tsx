@@ -575,7 +575,7 @@ export function DetailedLogs({ apiKey }: DetailedLogsProps) {
                                <span className="font-mono">{formatTime(log.firstResponseTime)}</span>
                              </div>
                              <div className="flex justify-between col-span-2">
-                                <span className="text-muted-foreground">Tokens (P/C/T):</span> {/* 简化标签 */}
+                                <span className="text-muted-foreground">Tokens (提示/完成/总计):</span> {/* 简化标签 */}
                                 <Tooltip>
                                   <TooltipTrigger asChild>
                                       <span className="font-mono">
@@ -643,15 +643,3 @@ export function DetailedLogs({ apiKey }: DetailedLogsProps) {
     </TooltipProvider>
   )
 }
-
-// 注意：后端 API (/api/filters) 文件未作修改，仅在此处作为上下文参考。
-/*
-// 文件名: api.filter.router.tsx (未修改)
-import { type NextRequest, NextResponse } from "next/server"
-import sqlite3 from "sqlite3"
-import { promisify } from "util"
-
-export async function GET(request: NextRequest) {
-  // ... (省略未修改的代码) ...
-}
-*/
