@@ -1,19 +1,21 @@
-// 文件名: channel-tester.tsx
-// 备注：这是一个完整的替换文件内容。请直接用以下内容覆盖 channel-tester.tsx 文件。
-
+// 文件名: src/components/channel-tester.tsx
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Separator } from "@/components/ui/separator"
-import { Skeleton } from "@/components/ui/skeleton" // 引入 Skeleton
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip" // 引入 Tooltip
+import { Skeleton } from "@/components/ui/skeleton"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { CheckCircle, XCircle, Clock, Play, PlayCircle, AlertCircle } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+// Import helper function from utils.ts
+import { formatTime } from "@/lib/utils"
+
+// --- Interfaces ---
 
 interface ChannelTesterProps {
   apiKey: string
@@ -34,48 +36,69 @@ interface Provider {
 
 interface TestResult {
   provider: string
-  model: string
+  model: string // Display name used for the test
   status: "idle" | "testing" | "success" | "error"
   message?: string
-  responseTime?: number
+  responseTime?: number // In seconds
 }
+
+// --- Component ---
 
 export function ChannelTester({ apiKey }: ChannelTesterProps) {
   const [providers, setProviders] = useState<Provider[]>([])
   const [loading, setLoading] = useState(true)
   const [testResults, setTestResults] = useState<Map<string, TestResult>>(new Map())
-  const [testing, setTesting] = useState(false)
-  const [selectedModels, setSelectedModels] = useState<Map<string, string>>(new Map())
+  const [testingAll, setTestingAll] = useState(false) // State for "Test All" button
+  const [selectedModels, setSelectedModels] = useState<Map<string, string>>(new Map()) // Map<providerName, modelDisplayName>
   const { toast } = useToast()
 
-  useEffect(() => {
-    loadProviders()
-  }, [apiKey])
+  // --- Data Loading ---
 
-  const loadProviders = async () => {
-    setLoading(true) // 开始加载时设置 loading
+  const loadProviders = useCallback(async () => {
+    if (!apiKey) {
+        setProviders([]);
+        setSelectedModels(new Map());
+        setTestResults(new Map());
+        setLoading(false);
+        return;
+    }
+    setLoading(true)
     try {
       const response = await fetch(`/api/providers/list?apiKey=${encodeURIComponent(apiKey)}`)
       if (response.ok) {
         const data = await response.json()
-        const loadedProviders = data.providers || []
+        const loadedProviders: Provider[] = data.providers || []
+        // Sort providers alphabetically by name for consistent order
+        loadedProviders.sort((a, b) => a.provider.localeCompare(b.provider));
         setProviders(loadedProviders)
 
+        // Initialize selected models and reset test results
         const initialSelections = new Map<string, string>()
-        loadedProviders.forEach((provider: Provider) => {
+        const initialResults = new Map<string, TestResult>()
+        loadedProviders.forEach((provider) => {
           if (provider.models.length > 0) {
-            // 默认选择第一个模型
-            initialSelections.set(provider.provider, provider.models[0].display)
+            // Default to the first model's display name
+            const defaultModelDisplay = provider.models[0].display;
+            initialSelections.set(provider.provider, defaultModelDisplay);
+            // Initialize result state for the default model
+             const testKey = `${provider.provider}-${defaultModelDisplay}`;
+             initialResults.set(testKey, {
+                 provider: provider.provider,
+                 model: defaultModelDisplay,
+                 status: "idle",
+             });
           }
         })
         setSelectedModels(initialSelections)
+        setTestResults(initialResults)
+
       } else {
         toast({
           title: "错误",
-          description: "加载渠道配置失败",
+          description: `加载渠道配置失败 (${response.status})`,
           variant: "destructive",
         })
-        setProviders([]) // 加载失败清空
+        setProviders([])
       }
     } catch (error) {
       console.error("加载渠道配置时发生错误:", error)
@@ -84,15 +107,42 @@ export function ChannelTester({ apiKey }: ChannelTesterProps) {
         description: "加载渠道配置时发生网络或解析错误",
         variant: "destructive",
       })
-      setProviders([]) // 加载失败清空
+      setProviders([])
     } finally {
       setLoading(false)
     }
-  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiKey, toast]) // Added toast to dependencies
+
+  useEffect(() => {
+    loadProviders()
+  }, [loadProviders]) // Depend on the stable loadProviders function
+
+  // --- Testing Logic ---
 
   const testChannel = async (provider: Provider, modelDisplay: string) => {
     const testKey = `${provider.provider}-${modelDisplay}`
 
+    // Ensure the model configuration exists
+    const selectedModel = provider.models.find((m) => m.display === modelDisplay)
+    if (!selectedModel) {
+      const errorMsg = `模型 "${modelDisplay}" 在渠道 "${provider.provider}" 中未找到配置。`
+      console.error(errorMsg)
+       setTestResults(
+         (prev) =>
+           new Map(
+             prev.set(testKey, {
+               provider: provider.provider,
+               model: modelDisplay,
+               status: "error",
+               message: errorMsg,
+             }),
+           ),
+       )
+      return; // Exit if model config not found
+    }
+
+    // Update state to "testing"
     setTestResults(
       (prev) =>
         new Map(
@@ -105,23 +155,18 @@ export function ChannelTester({ apiKey }: ChannelTesterProps) {
     )
 
     try {
-      const selectedModel = provider.models.find((m) => m.display === modelDisplay)
-      if (!selectedModel) {
-        // 在函数开始时就处理，避免后续错误
-        throw new Error(`模型 "${modelDisplay}" 在渠道 "${provider.provider}" 中未找到配置。`)
-      }
-
       const response = await fetch("/api/providers/test", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          apiKey,
+          apiKey, // Assuming the main apiKey is used for testing auth
           provider: provider.provider,
           base_url: provider.base_url,
-          api: Array.isArray(provider.api) ? provider.api[0] : provider.api, // 默认使用第一个 API Key 测试
-          model: selectedModel.original,
+          // Use the first API key from the list if it's an array, or the string directly
+          api: Array.isArray(provider.api) ? provider.api[0] : provider.api,
+          model: selectedModel.original, // Use the original model name for the API call
         }),
       })
 
@@ -132,7 +177,7 @@ export function ChannelTester({ apiKey }: ChannelTesterProps) {
           new Map(
             prev.set(testKey, {
               provider: provider.provider,
-              model: modelDisplay,
+              model: modelDisplay, // Keep using display name in results map key/value
               status: result.success ? "success" : "error",
               message: result.message || (result.success ? "测试成功" : "测试失败，无详细信息"),
               responseTime: result.responseTime,
@@ -156,35 +201,37 @@ export function ChannelTester({ apiKey }: ChannelTesterProps) {
   }
 
   const testAllChannels = async () => {
-    setTesting(true)
-    const supportedProviders = providers.filter((p) => p.supported)
+    setTestingAll(true)
+    const supportedProviders = providers.filter((p) => p.supported && p.models.length > 0);
 
-    // 清空之前的测试结果
-    const initialResults = new Map<string, TestResult>()
+    // Reset results for all testable models to 'testing' initially
+    const testingResults = new Map<string, TestResult>(testResults); // Start with current results
     supportedProviders.forEach((provider) => {
-      const modelDisplay = selectedModels.get(provider.provider) || provider.models[0]?.display
+      const modelDisplay = selectedModels.get(provider.provider); // Get currently selected model
       if (modelDisplay) {
-        const testKey = `${provider.provider}-${modelDisplay}`
-        initialResults.set(testKey, {
-          provider: provider.provider,
-          model: modelDisplay,
-          status: "idle", // 重置为 idle
-        })
+          const testKey = `${provider.provider}-${modelDisplay}`;
+          testingResults.set(testKey, {
+             provider: provider.provider,
+             model: modelDisplay,
+             status: 'testing', // Set to testing
+             message: undefined,
+             responseTime: undefined
+          });
       }
-    })
-    setTestResults(initialResults)
+    });
+    setTestResults(testingResults);
 
-    // 使用 Promise.allSettled 来确保所有测试都完成，即使部分失败
+    // Execute tests in parallel
     const testPromises = supportedProviders.map((provider) => {
-      const modelDisplay = selectedModels.get(provider.provider) || provider.models[0]?.display
+      const modelDisplay = selectedModels.get(provider.provider);
       if (modelDisplay) {
-        return testChannel(provider, modelDisplay)
+        return testChannel(provider, modelDisplay);
       }
-      return Promise.resolve() // 对于没有可选模型的 Provider 返回 resolve
-    })
+      return Promise.resolve(); // No model selected/available for this provider
+    });
 
-    await Promise.allSettled(testPromises)
-    setTesting(false)
+    await Promise.allSettled(testPromises); // Wait for all tests to complete (success or failure)
+    setTestingAll(false)
 
     toast({
       title: "测试完成",
@@ -192,125 +239,134 @@ export function ChannelTester({ apiKey }: ChannelTesterProps) {
     })
   }
 
-  const getStatusBadge = (status: TestResult["status"]) => {
+  // --- UI Helpers ---
+
+  const getStatusBadge = (status: TestResult["status"] | undefined) => {
     switch (status) {
       case "testing":
-        return <Badge variant="secondary">测试中...</Badge>
+        // Use a subtle loading indicator within the badge if possible
+        return <Badge variant="secondary" className="flex items-center gap-1"><Clock className="w-3 h-3 animate-spin"/>测试中</Badge>
       case "success":
         return (
-          <Badge variant="default" className="bg-green-100 text-green-700 border border-green-200 hover:bg-green-200">
-            成功
+          <Badge variant="default" className="bg-green-100 text-green-700 border border-green-200 hover:bg-green-200 flex items-center gap-1">
+            <CheckCircle className="w-3 h-3"/>成功
           </Badge>
         )
       case "error":
         return (
-          <Badge variant="destructive" className="bg-red-100 text-red-700 border border-red-200 hover:bg-red-200">
-            失败
+          <Badge variant="destructive" className="bg-red-100 text-red-700 border border-red-200 hover:bg-red-200 flex items-center gap-1">
+             <XCircle className="w-3 h-3"/>失败
           </Badge>
         )
-      default:
+      default: // idle or undefined
         return <Badge variant="outline">待测</Badge>
     }
   }
 
-  const handleModelChange = (providerName: string, modelDisplay: string) => {
-    setSelectedModels((prev) => new Map(prev.set(providerName, modelDisplay)))
-    // 模型改变后，清除该模型的测试结果
-    const testKey = `${providerName}-${modelDisplay}`
+  const handleModelChange = (providerName: string, newModelDisplay: string) => {
+    // Update the selected model for the provider
+    setSelectedModels((prev) => new Map(prev.set(providerName, newModelDisplay)));
+
+    // Reset the test result specifically for the newly selected model
+    const testKey = `${providerName}-${newModelDisplay}`;
     setTestResults((prev) => {
-        const newResults = new Map(prev);
-        // 遍历所有与此 provider 相关的 key 并重置状态（如果需要更精确，只重置改变前后的key）
-        prev.forEach((value, key) => {
-            if(key.startsWith(providerName + '-')) {
-                newResults.set(key, { ...value, status: 'idle', message: undefined, responseTime: undefined });
-            }
-        });
-        // 确保当前选择的模型被重置
-        newResults.set(testKey, { provider: providerName, model: modelDisplay, status: 'idle' });
-        return newResults;
+      const newResults = new Map(prev);
+      newResults.set(testKey, {
+          provider: providerName,
+          model: newModelDisplay,
+          status: 'idle', // Reset to idle
+          message: undefined,
+          responseTime: undefined
+      });
+      return newResults;
     });
   }
 
-  // 加载状态的骨架屏渲染
-  const renderSkeleton = (count = 3) => (
-    <div className="space-y-4">
-      {[...Array(count)].map((_, i) => (
-        <Card key={i}>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <Skeleton className="h-6 w-3/5" />
-              <Skeleton className="h-5 w-8 rounded-full" />
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="space-y-2">
-              <div className="flex items-center space-x-2">
-                 <Skeleton className="h-4 w-16" />
-                 <Skeleton className="h-8 w-full" />
+  // --- Skeleton Rendering ---
+  const renderSkeleton = (count = 3, isMobile = false) => {
+      if (isMobile) {
+          return (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {[...Array(count)].map((_, i) => (
+                      <Card key={i}>
+                          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-4 px-4">
+                              <Skeleton className="h-5 w-2/5" />
+                              <Skeleton className="h-5 w-5 rounded-full" />
+                          </CardHeader>
+                          <CardContent className="px-4 pb-4 space-y-3">
+                               <Skeleton className="h-4 w-1/3 mb-1 mt-1" /> {/* Label Skeleton */}
+                               <Skeleton className="h-9 w-full" /> {/* Select Skeleton */}
+                               <Skeleton className="h-4 w-1/3 mb-1 mt-1" /> {/* Label Skeleton */}
+                               <Skeleton className="h-4 w-3/5" /> {/* Text Skeleton */}
+                              <Separator />
+                              <div className="flex items-center justify-between">
+                                  <Skeleton className="h-5 w-16 rounded-md" /> {/* Badge Skeleton */}
+                                  <Skeleton className="h-4 w-10" /> {/* Time Skeleton */}
+                              </div>
+                              <Skeleton className="h-9 w-full" /> {/* Button Skeleton */}
+                          </CardContent>
+                      </Card>
+                  ))}
               </div>
-               <div className="flex items-center space-x-2">
-                 <Skeleton className="h-3 w-20" />
-                 <Skeleton className="h-3 w-4/5" />
-               </div>
-            </div>
-            <Separator />
-            <div className="flex items-center justify-between">
-              <Skeleton className="h-5 w-12 rounded-md" />
-              <Skeleton className="h-5 w-10" />
-            </div>
-             <Skeleton className="h-4 w-full" />
-             <Skeleton className="h-9 w-full" />
-          </CardContent>
-        </Card>
-      ))}
-    </div>
-  )
+          );
+      } else {
+          // Desktop Table Skeleton
+           return (
+             <Card>
+               <CardContent className="p-0">
+                 <Table>
+                   <TableHeader>
+                     <TableRow>
+                       <TableHead><Skeleton className="h-5 w-24" /></TableHead>
+                       <TableHead><Skeleton className="h-5 w-32" /></TableHead>
+                       <TableHead><Skeleton className="h-5 w-40" /></TableHead>
+                       <TableHead className="text-center"><Skeleton className="h-5 w-10 mx-auto" /></TableHead>
+                       <TableHead><Skeleton className="h-5 w-16" /></TableHead>
+                       <TableHead><Skeleton className="h-5 w-40" /></TableHead>
+                       <TableHead className="text-right"><Skeleton className="h-5 w-16 ml-auto" /></TableHead>
+                       <TableHead className="text-center"><Skeleton className="h-5 w-10 mx-auto" /></TableHead>
+                     </TableRow>
+                   </TableHeader>
+                   <TableBody>
+                     {[...Array(count)].map((_, i) => (
+                       <TableRow key={i}>
+                         <TableCell><Skeleton className="h-5 w-full" /></TableCell>
+                         <TableCell><Skeleton className="h-5 w-full" /></TableCell>
+                         <TableCell><Skeleton className="h-8 w-full" /></TableCell> {/* Select Skeleton */}
+                         <TableCell className="text-center"><Skeleton className="h-5 w-5 rounded-full mx-auto" /></TableCell>
+                         <TableCell><Skeleton className="h-5 w-full rounded-md" /></TableCell> {/* Badge Skeleton */}
+                         <TableCell><Skeleton className="h-5 w-full" /></TableCell> {/* Message Skeleton */}
+                         <TableCell className="text-right"><Skeleton className="h-5 w-full ml-auto" /></TableCell>
+                         <TableCell className="text-center"><Skeleton className="h-7 w-7 rounded-sm mx-auto" /></TableCell> {/* Button Skeleton */}
+                       </TableRow>
+                     ))}
+                   </TableBody>
+                 </Table>
+               </CardContent>
+             </Card>
+           );
+      }
+  };
+
+  // --- Render ---
 
   return (
     <TooltipProvider>
-      <div className="space-y-6"> {/* 增加外层间距 */}
-        <div className="flex flex-row items-center justify-between gap-4"> {/* 响应式布局 */}
+      <div className="space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <h2 className="text-xl font-semibold tracking-tight">渠道测试</h2>
-          <div className="flex items-center space-x-2">
-            <Button onClick={testAllChannels} disabled={testing || loading || providers.length === 0} size="sm"> {/* 调整按钮大小 */}
-              <PlayCircle className={`w-4 h-4 mr-2 ${testing ? 'animate-spin' : ''}`} />
-              {testing ? "测试中..." : "测试全部"}
-            </Button>
-          </div>
+          <Button
+            onClick={testAllChannels}
+            disabled={testingAll || loading || providers.length === 0}
+            size="sm"
+          >
+            <PlayCircle className={`w-4 h-4 mr-2 ${testingAll ? 'animate-spin' : ''}`} />
+            {testingAll ? "测试中..." : "测试全部"}
+          </Button>
         </div>
 
         {loading ? (
-           <>
-             {/* 桌面骨架屏 */}
-            <div className="hidden lg:block">
-              <Card>
-                <CardContent className="p-0">
-                   <Table>
-                     <TableHeader>
-                       <TableRow>
-                         {/* 更新骨架屏列数以匹配表格 */}
-                         {[...Array(8)].map((_, i) => (
-                           <TableHead key={i}><Skeleton className="h-5 w-full" /></TableHead>
-                         ))}
-                       </TableRow>
-                     </TableHeader>
-                      <TableBody>
-                        {[...Array(3)].map((_, i) => (
-                           <TableRow key={i}>
-                             {/* 更新骨架屏列数以匹配表格 */}
-                             {[...Array(8)].map((_, j) => (
-                                <TableCell key={j}><Skeleton className="h-5 w-full" /></TableCell>
-                             ))}
-                           </TableRow>
-                        ))}
-                      </TableBody>
-                   </Table>
-                </CardContent>
-              </Card>
-            </div>
-            {/* 移动端骨架屏 */}
-            <div className="lg:hidden">{renderSkeleton()}</div>
-           </>
+          renderSkeleton(3, false) // Show skeleton while loading providers
         ) : providers.length === 0 ? (
           <Card>
             <CardContent className="p-6 text-center text-muted-foreground">
@@ -319,22 +375,21 @@ export function ChannelTester({ apiKey }: ChannelTesterProps) {
           </Card>
         ) : (
           <>
-            {/* Desktop Table - 优化样式和布局 */}
+            {/* Desktop Table */}
             <div className="hidden lg:block">
               <Card>
                 <CardContent className="p-0">
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>渠道名称</TableHead>
-                        <TableHead>原始模型名称</TableHead>
-                        <TableHead>选择测试模型</TableHead>
-                        <TableHead className="text-center">支持</TableHead>
-                        <TableHead>状态</TableHead>
-                        {/* 新增消息列标题 */}
-                        <TableHead>消息</TableHead>
-                        <TableHead className="text-right">响应 (s)</TableHead>
-                        <TableHead className="text-center">操作</TableHead>
+                        <TableHead className="w-[15%]">渠道名称</TableHead>
+                        <TableHead className="w-[15%]">原始模型</TableHead>
+                        <TableHead className="w-[20%]">选择测试模型</TableHead>
+                        <TableHead className="w-[5%] text-center">支持</TableHead>
+                        <TableHead className="w-[10%]">状态</TableHead>
+                        <TableHead className="w-[20%]">消息</TableHead>
+                        <TableHead className="w-[10%] text-right">响应时间</TableHead>
+                        <TableHead className="w-[5%] text-center">操作</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -346,38 +401,37 @@ export function ChannelTester({ apiKey }: ChannelTesterProps) {
                         const isTestingThis = result?.status === "testing";
 
                         return (
-                          <TableRow key={index} className={!provider.supported ? "opacity-50" : ""}>
+                          <TableRow key={index} className={!provider.supported ? "opacity-50 cursor-not-allowed" : ""}>
                             <TableCell className="font-medium">
                               <Tooltip>
                                 <TooltipTrigger asChild>
-                                  <div className="truncate max-w-[150px]">{provider.provider}</div>
+                                  <div className="truncate max-w-full">{provider.provider}</div>
                                 </TooltipTrigger>
-                                <TooltipContent>
-                                  <p>{provider.provider}</p>
-                                </TooltipContent>
+                                <TooltipContent><p>{provider.provider}</p></TooltipContent>
                               </Tooltip>
                             </TableCell>
-                            <TableCell className="font-mono text-xs text-muted-foreground">
-                               <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <div className="truncate max-w-[150px]">
-                                    {modelConfig?.original || (provider.models.length > 0 ? "未选择" : "-")}
-                                   </div>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <p>{modelConfig?.original || (provider.models.length > 0 ? "未选择" : "无可用模型")}</p>
-                                </TooltipContent>
-                              </Tooltip>
-                            </TableCell>
+                             <TableCell className="font-mono text-xs text-muted-foreground">
+                                <Tooltip>
+                                 <TooltipTrigger asChild>
+                                   <div className="truncate max-w-full">
+                                     {modelConfig?.original || (provider.models.length > 0 ? "N/A" : "-")}
+                                    </div>
+                                 </TooltipTrigger>
+                                 <TooltipContent>
+                                   <p>{modelConfig?.original || (provider.models.length > 0 ? "未选择或无效" : "无可用模型")}</p>
+                                 </TooltipContent>
+                               </Tooltip>
+                             </TableCell>
                             <TableCell>
-                              {provider.models.length > 1 ? (
+                              {provider.models.length > 0 ? (
                                 <Select
-                                  value={selectedModelDisplay}
+                                  value={selectedModelDisplay !== 'N/A' ? selectedModelDisplay : undefined} // Handle 'N/A' case for Select
                                   onValueChange={(value) => handleModelChange(provider.provider, value)}
-                                  disabled={!provider.supported || testing}
+                                  disabled={!provider.supported || testingAll}
                                 >
-                                  <SelectTrigger className="w-full h-8 text-xs max-w-[180px]"> {/* 调整 Select 样式和最大宽度 */}
-                                    <SelectValue />
+                                  {/* Reduced height for Select */}
+                                  <SelectTrigger className="h-8 text-xs max-w-full">
+                                    <SelectValue placeholder="选择模型" />
                                   </SelectTrigger>
                                   <SelectContent>
                                     {provider.models.map((model, modelIndex) => (
@@ -388,68 +442,67 @@ export function ChannelTester({ apiKey }: ChannelTesterProps) {
                                   </SelectContent>
                                 </Select>
                               ) : (
-                                <span className="text-sm text-muted-foreground">
-                                  {selectedModelDisplay !== 'N/A' ? selectedModelDisplay : (provider.models.length > 0 ? '默认模型' : '无模型')}
-                                </span>
+                                <span className="text-sm text-muted-foreground">-</span>
                               )}
                             </TableCell>
                             <TableCell className="text-center">
-                              {provider.supported ? (
-                                <Tooltip>
-                                  <TooltipTrigger>
-                                     <CheckCircle className="w-4 h-4 text-green-500 mx-auto" />
-                                  </TooltipTrigger>
-                                  <TooltipContent><p>支持</p></TooltipContent>
-                                </Tooltip>
-                              ) : (
-                                 <Tooltip>
-                                  <TooltipTrigger>
-                                     <AlertCircle className="w-4 h-4 text-muted-foreground mx-auto" />
-                                  </TooltipTrigger>
-                                  <TooltipContent><p>非标准端点，暂不支持</p></TooltipContent>
-                                </Tooltip>
-                              )}
+                              <Tooltip>
+                                <TooltipTrigger>
+                                  {provider.supported ? (
+                                    <CheckCircle className="w-4 h-4 text-green-500 mx-auto" />
+                                  ) : (
+                                    <AlertCircle className="w-4 h-4 text-muted-foreground mx-auto" />
+                                  )}
+                                </TooltipTrigger>
+                                <TooltipContent><p>{provider.supported ? '支持标准测试' : '非标准端点，暂不支持测试'}</p></TooltipContent>
+                              </Tooltip>
                             </TableCell>
                             <TableCell>
-                               {/* 移除原状态单元格内的消息显示逻辑 */}
-                               <div className="flex items-center">
-                                 {getStatusBadge(result?.status || "idle")}
-                               </div>
+                              {getStatusBadge(result?.status)}
                             </TableCell>
-                            {/* 新增消息单元格 */}
                             <TableCell>
                               {result?.message ? (
                                 <Tooltip>
                                   <TooltipTrigger asChild>
-                                    {/* 增加文字样式和截断 */}
-                                    <div className="truncate max-w-[200px] text-xs text-muted-foreground cursor-default">
+                                    <div className={`truncate max-w-full text-xs ${result.status === 'error' ? 'text-red-600' : 'text-muted-foreground'} cursor-default`}>
                                       {result.message}
                                     </div>
                                   </TooltipTrigger>
-                                  {/* 调整 Tooltip 内容宽度和换行 */}
                                   <TooltipContent className="max-w-md break-words">
                                     <p>{result.message}</p>
                                   </TooltipContent>
                                 </Tooltip>
                               ) : (
-                                /* 如果没有消息，显示占位符 */
                                 <span className="text-xs text-muted-foreground">-</span>
                               )}
                             </TableCell>
-                            <TableCell className="text-right font-mono text-sm">
-                              {/* 在响应时间后添加 "s" 单位 */}
-                              {result?.responseTime !== undefined ? `${result.responseTime.toFixed(2)}s` : "-"}
+                            <TableCell className="text-right font-mono text-xs">
+                              {/* Use formatTime utility */}
+                              {formatTime(result?.responseTime ?? NaN)}
                             </TableCell>
                             <TableCell className="text-center">
-                                   <Button
-                                    size="icon" // 使用图标按钮
-                                    variant="ghost" // 使用 ghost 变体
-                                    className="h-7 w-7" // 调整大小
-                                    onClick={() => provider.supported && modelConfig && testChannel(provider, selectedModelDisplay)}
-                                    disabled={!provider.supported || !modelConfig || isTestingThis || testing}
-                                  >
-                                    {isTestingThis ? <Clock className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-                                  </Button>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  {/* Wrap button in span for tooltip when disabled */}
+                                   <span tabIndex={(!provider.supported || !modelConfig || isTestingThis || testingAll) ? 0 : -1}>
+                                      <Button
+                                        size="icon"
+                                        variant="ghost"
+                                        className="h-7 w-7"
+                                        onClick={() => provider.supported && modelConfig && testChannel(provider, selectedModelDisplay)}
+                                        disabled={!provider.supported || !modelConfig || isTestingThis || testingAll}
+                                        aria-label={`测试 ${provider.provider} - ${selectedModelDisplay}`}
+                                      >
+                                        {isTestingThis ? <Clock className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                                      </Button>
+                                   </span>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                    <p>
+                                      {!provider.supported ? '不支持' : !modelConfig ? '无模型' : isTestingThis ? '测试中...' : testingAll ? '测试中...' : `测试此渠道`}
+                                    </p>
+                                </TooltipContent>
+                              </Tooltip>
                             </TableCell>
                           </TableRow>
                         )
@@ -460,50 +513,45 @@ export function ChannelTester({ apiKey }: ChannelTesterProps) {
               </Card>
             </div>
 
-            {/* Mobile Cards - 保持不变 */}
+            {/* Mobile Cards */}
             <div className="lg:hidden grid grid-cols-1 sm:grid-cols-2 gap-4">
               {providers.map((provider, index) => {
-                 const selectedModelDisplay = selectedModels.get(provider.provider) || provider.models[0]?.display || 'N/A';
-                 const modelConfig = provider.models.find((m) => m.display === selectedModelDisplay);
-                 const testKey = `${provider.provider}-${selectedModelDisplay}`;
-                 const result = testResults.get(testKey);
-                 const isTestingThis = result?.status === "testing";
+                const selectedModelDisplay = selectedModels.get(provider.provider) || provider.models[0]?.display || 'N/A';
+                const modelConfig = provider.models.find((m) => m.display === selectedModelDisplay);
+                const testKey = `${provider.provider}-${selectedModelDisplay}`;
+                const result = testResults.get(testKey);
+                const isTestingThis = result?.status === "testing";
 
                 return (
                   <Card key={index} className={`max-w-full ${!provider.supported ? "opacity-60" : ""}`}>
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-4 px-4"> {/* 调整内边距 */}
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 pt-4 px-4">
                       <CardTitle className="text-sm font-medium truncate" title={provider.provider}>
                         {provider.provider}
                       </CardTitle>
-                       {provider.supported ? (
-                         <Tooltip>
-                           <TooltipTrigger>
-                              <CheckCircle className="w-4 h-4 text-green-500" />
-                           </TooltipTrigger>
-                           <TooltipContent><p>支持</p></TooltipContent>
-                         </Tooltip>
-                       ) : (
-                         <Tooltip>
-                           <TooltipTrigger>
-                              <AlertCircle className="w-4 h-4 text-muted-foreground" />
-                           </TooltipTrigger>
-                           <TooltipContent><p>非标准端点，暂不支持</p></TooltipContent>
-                         </Tooltip>
-                       )}
+                      <Tooltip>
+                        <TooltipTrigger>
+                          {provider.supported ? (
+                            <CheckCircle className="w-4 h-4 text-green-500" />
+                          ) : (
+                            <AlertCircle className="w-4 h-4 text-muted-foreground" />
+                          )}
+                        </TooltipTrigger>
+                        <TooltipContent><p>{provider.supported ? '支持标准测试' : '非标准端点，暂不支持测试'}</p></TooltipContent>
+                      </Tooltip>
                     </CardHeader>
-                    <CardContent className="px-4 pb-4 space-y-3"> {/* 调整内边距 */}
+                    <CardContent className="px-4 pb-4 space-y-3">
                       <div className="space-y-2">
-                         {/* 模型选择或显示 */}
-                          {provider.models.length > 1 ? (
+                        {/* Model Selection */}
+                        {provider.models.length > 0 ? (
                             <div>
-                               <label className="text-xs text-muted-foreground mb-1 block">选择模型</label>
-                               <Select
-                                value={selectedModelDisplay}
+                              <label className="text-xs text-muted-foreground mb-1 block">选择模型</label>
+                              <Select
+                                value={selectedModelDisplay !== 'N/A' ? selectedModelDisplay : undefined}
                                 onValueChange={(value) => handleModelChange(provider.provider, value)}
-                                disabled={!provider.supported || testing}
+                                disabled={!provider.supported || testingAll}
                               >
                                 <SelectTrigger className="w-full h-9 text-xs">
-                                  <SelectValue />
+                                  <SelectValue placeholder="选择模型" />
                                 </SelectTrigger>
                                 <SelectContent>
                                   {provider.models.map((model, modelIndex) => (
@@ -517,48 +565,45 @@ export function ChannelTester({ apiKey }: ChannelTesterProps) {
                           ) : (
                              <div>
                                 <label className="text-xs text-muted-foreground mb-1 block">模型</label>
-                                <p className="text-sm font-medium truncate" title={selectedModelDisplay}>
-                                   {selectedModelDisplay !== 'N/A' ? selectedModelDisplay : (provider.models.length > 0 ? '默认模型' : '无模型')}
-                                </p>
+                                <p className="text-sm text-muted-foreground">-</p>
                              </div>
                           )}
-                          {/* 原始模型名称 */}
-                          {modelConfig && (
-                              <div>
-                                  <label className="text-xs text-muted-foreground mb-1 block">原始名称</label>
-                                  <p className="font-mono text-xs text-muted-foreground truncate" title={modelConfig.original}>
-                                      {modelConfig.original}
-                                  </p>
-                              </div>
-                          )}
+                        {/* Original Model Name */}
+                        {modelConfig && (
+                          <div>
+                            <label className="text-xs text-muted-foreground mb-1 block">原始名称</label>
+                            <p className="font-mono text-xs text-muted-foreground truncate" title={modelConfig.original}>
+                              {modelConfig.original}
+                            </p>
+                          </div>
+                        )}
                       </div>
                       <Separator />
                       <div className="flex items-center justify-between text-sm">
-                          <div className="flex items-center space-x-1">
-                             {getStatusBadge(result?.status || "idle")}
-                          </div>
-                         {result?.responseTime !== undefined && (
-                            <span className="font-mono text-xs">{result.responseTime.toFixed(2)}s</span>
-                          )}
+                        <div className="flex items-center space-x-1">
+                          {getStatusBadge(result?.status)}
+                        </div>
+                        {/* Use formatTime utility */}
+                        <span className="font-mono text-xs">{formatTime(result?.responseTime ?? NaN)}</span>
                       </div>
-                      {/* 移动端错误消息显示逻辑保持不变 */}
+                      {/* Error Message */}
                       {result?.message && result.status === 'error' && (
-                         <Tooltip>
-                             <TooltipTrigger asChild>
-                                 <p className="text-xs text-red-600 break-words line-clamp-2"> {/* 最多显示两行 */}
-                                     {result.message}
-                                 </p>
-                             </TooltipTrigger>
-                             <TooltipContent className="max-w-[250px] break-words">
-                                 <p>{result.message}</p>
-                             </TooltipContent>
-                         </Tooltip>
-                       )}
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <p className="text-xs text-red-600 break-words line-clamp-2">
+                              {result.message}
+                            </p>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-[250px] break-words">
+                            <p>{result.message}</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
                       <Button
                         size="sm"
                         variant="outline"
                         onClick={() => provider.supported && modelConfig && testChannel(provider, selectedModelDisplay)}
-                        disabled={!provider.supported || !modelConfig || isTestingThis || testing}
+                        disabled={!provider.supported || !modelConfig || isTestingThis || testingAll}
                         className="w-full"
                       >
                         {isTestingThis ? <Clock className="w-3 h-3 mr-1 animate-spin" /> : <Play className="w-3 h-3 mr-1" />}
