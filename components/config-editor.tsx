@@ -286,7 +286,7 @@ export function ConfigEditor({ apiKey }: ConfigEditorProps) {
     <TooltipProvider>
         <div className="space-y-6"> {/* Increased spacing */}
           {/* Header Section (Unified with Responsive Handling) */}
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div className="flex flex-row items-center justify-between gap-4">
             <h2 className="text-xl font-semibold tracking-tight">配置管理</h2>
             {/* Action Buttons */}
             <div className="flex flex-wrap items-center gap-2">

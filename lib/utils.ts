@@ -30,9 +30,9 @@ export const formatNumber = (num: number): string => {
 export const formatNumberCompact = (num: number): string => {
   if (isNaN(num) || num === null || num === undefined) return "-";
   // 使用下划线提高可读性
-  if (num >= 1_000_000_000) return (num / 1_000_000_000).toFixed(1) + "B";
-  if (num >= 1_000_000) return (num / 1_000_000).toFixed(1) + "M";
-  if (num >= 1_000) return (num / 1_000).toFixed(1) + "K";
+  if (num >= 1_000_000_000) return (num / 1_000_000_000).toFixed(2) + "B";
+  if (num >= 1_000_000) return (num / 1_000_000).toFixed(2) + "M";
+  if (num >= 1_000) return (num / 1_000).toFixed(2) + "K";
   return num.toString();
 };
 

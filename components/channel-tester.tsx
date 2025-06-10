@@ -69,7 +69,7 @@ export function ChannelTester({ apiKey }: ChannelTesterProps) {
         const data = await response.json()
         const loadedProviders: Provider[] = data.providers || []
         // Sort providers alphabetically by name for consistent order
-        loadedProviders.sort((a, b) => a.provider.localeCompare(b.provider));
+        // loadedProviders.sort((a, b) => a.provider.localeCompare(b.provider));
         setProviders(loadedProviders)
 
         // Initialize selected models and reset test results
@@ -353,7 +353,7 @@ export function ChannelTester({ apiKey }: ChannelTesterProps) {
   return (
     <TooltipProvider>
       <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div className="flex flex-row items-center justify-between gap-2">
           <h2 className="text-xl font-semibold tracking-tight">渠道测试</h2>
           <Button
             onClick={testAllChannels}

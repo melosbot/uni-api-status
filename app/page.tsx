@@ -90,7 +90,7 @@ export default function HomePage() {
   // 根据角色获取 Badge 组件
   const getRoleBadge = (role: string) => {
     if (role === "admin") {
-      return <Badge variant="destructive">管理员</Badge> // 使用更醒目的颜色
+      return <Badge variant="default">管理员</Badge>
     }
     return <Badge variant="secondary">用户</Badge>
   }
