@@ -340,7 +340,7 @@ export function ConfigEditor({ apiKey }: ConfigEditorProps) {
                               ) : (
                                 <Save className="w-4 h-4 mr-2" />
                               )}
-                              {saving ? "保存中..." : !isYamlValid ? "格式无效" : "保存配置"}
+                              {saving ? "保存中..." : !isYamlValid ? "格式无效" : "保存"}
                           </Button>
                      </span>
                   </TooltipTrigger>
