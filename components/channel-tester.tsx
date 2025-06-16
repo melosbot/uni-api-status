@@ -245,21 +245,21 @@ export function ChannelTester({ apiKey }: ChannelTesterProps) {
     switch (status) {
       case "testing":
         // Use a subtle loading indicator within the badge if possible
-        return <Badge variant="secondary" className="flex items-center gap-1"><Clock className="w-3 h-3 animate-spin"/>测试中</Badge>
+        return <Badge variant="secondary" className="flex items-center gap-1 w-20 justify-center"><Clock className="w-3 h-3 animate-spin"/>测试中</Badge>
       case "success":
         return (
-          <Badge variant="default" className="bg-green-100 text-green-700 border border-green-200 hover:bg-green-200 flex items-center gap-1">
+          <Badge variant="default" className="bg-green-100 text-green-700 border border-green-200 hover:bg-green-200 flex items-center gap-1 w-20 justify-center">
             <CheckCircle className="w-3 h-3"/>成功
           </Badge>
         )
       case "error":
         return (
-          <Badge variant="destructive" className="bg-red-100 text-red-700 border border-red-200 hover:bg-red-200 flex items-center gap-1">
+          <Badge variant="destructive" className="bg-red-100 text-red-700 border border-red-200 hover:bg-red-200 flex items-center gap-1 w-20 justify-center">
              <XCircle className="w-3 h-3"/>失败
           </Badge>
         )
       default: // idle or undefined
-        return <Badge variant="outline">待测</Badge>
+        return <Badge variant="outline" className="w-20 flex justify-center items-center">待测</Badge>
     }
   }
 
@@ -464,7 +464,7 @@ export function ChannelTester({ apiKey }: ChannelTesterProps) {
                               {result?.message ? (
                                 <Tooltip>
                                   <TooltipTrigger asChild>
-                                    <div className={`truncate max-w-full text-xs ${result.status === 'error' ? 'text-red-600' : 'text-muted-foreground'} cursor-default`}>
+                                    <div className={`truncate max-w-xs text-xs ${result.status === 'error' ? 'text-red-600' : 'text-muted-foreground'} cursor-default`}>
                                       {result.message}
                                     </div>
                                   </TooltipTrigger>
