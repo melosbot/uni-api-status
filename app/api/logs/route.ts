@@ -7,6 +7,20 @@ import { type NextRequest, NextResponse } from "next/server"
 import sqlite3 from "sqlite3"
 import { promisify } from "util"
 
+// 定义从数据库返回的日志行的数据结构
+interface LogRow {
+  timestamp: string
+  success_int: 0 | 1
+  model: string
+  provider: string
+  processTime: number
+  firstResponseTime: number
+  promptTokens: number
+  completionTokens: number
+  totalTokens: number
+  text: string
+}
+
 // 辅助函数，用于安全地将字符串 'true'/'false' 转换为布尔值
 function parseBoolean(value: string | null): boolean | null {
     if (value === null || value === undefined) {
@@ -49,7 +63,7 @@ export async function GET(request: NextRequest) {
         }
     });
 
-    const dbAll = promisify(db.all.bind(db))
+    const dbAll = promisify(db.all.bind(db)) as (sql: string, params: (string | number | boolean)[]) => Promise<LogRow[]>;
     const dbClose = promisify(db.close.bind(db))
 
     try {
@@ -82,11 +96,11 @@ export async function GET(request: NextRequest) {
       // 为了检查是否有下一页，多查询一条记录
       const queryLimit = limit + 1;
 
-      const results = await dbAll(
-        `
+      const sql = `
         SELECT
           r.timestamp,
-          CASE COALESCE(c.success, 0) WHEN 1 THEN 1 ELSE 0 END as success_int,
+          -- 使用 MAX() 聚合函数来处理潜在的重复记录
+          CASE MAX(COALESCE(c.success, 0)) WHEN 1 THEN 1 ELSE 0 END as success_int,
           r.model,
           r.provider,
           r.process_time as processTime,
@@ -98,11 +112,13 @@ export async function GET(request: NextRequest) {
         FROM request_stats r
         LEFT JOIN channel_stats c ON r.request_id = c.request_id
         ${whereClause}
+        GROUP BY r.request_id -- 通过唯一的请求ID进行分组，防止重复
         ORDER BY r.timestamp DESC
         LIMIT ? OFFSET ?
-      `,
-        [...params, queryLimit, offset], // 使用查询限制 queryLimit
-      )
+      `;
+      const finalParams = [...params, queryLimit, offset];
+
+      const results = await dbAll(sql, finalParams);
 
       // 处理查询结果，将 success_int 转换为布尔值
       const processedResults = results.map(row => ({
