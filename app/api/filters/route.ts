@@ -1,6 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import sqlite3 from "sqlite3"
-import { promisify } from "util"
+import { query } from "@/lib/db"
 
 export async function GET(request: NextRequest) {
   try {
@@ -11,42 +10,33 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "API Key is required" }, { status: 400 })
     }
 
-    const dbPath = process.env.STATS_DB_PATH || "/app/data/stats.db"
-    const db = new sqlite3.Database(dbPath)
-
-    const dbAll = promisify(db.all.bind(db))
-    const dbClose = promisify(db.close.bind(db))
-
     try {
       const [models, providers] = await Promise.all([
-        dbAll(
+        query(
           `
-          SELECT DISTINCT model 
-          FROM request_stats 
-          WHERE api_key = ? AND endpoint = 'POST /v1/chat/completions'
+          SELECT DISTINCT model
+          FROM request_stats
+          WHERE api_key = $1 AND endpoint = 'POST /v1/chat/completions'
           ORDER BY model
         `,
           [apiKey],
         ),
-        dbAll(
+        query(
           `
-          SELECT DISTINCT provider 
-          FROM request_stats 
-          WHERE api_key = ? AND endpoint = 'POST /v1/chat/completions'
+          SELECT DISTINCT provider
+          FROM request_stats
+          WHERE api_key = $1 AND endpoint = 'POST /v1/chat/completions'
           ORDER BY provider
         `,
           [apiKey],
         ),
       ])
 
-      await dbClose()
-
       return NextResponse.json({
-        models: models.map((row) => row.model),
-        providers: providers.map((row) => row.provider),
+        models: models.map((row: any) => row.model),
+        providers: providers.map((row: any) => row.provider),
       })
     } catch (dbError) {
-      await dbClose()
       throw dbError
     }
   } catch (error) {

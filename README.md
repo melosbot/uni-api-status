@@ -54,7 +54,7 @@
 - **图标**: Lucide React
 - **后端 API**: Next.js API Routes
 - **YAML 处理**: `js-yaml`
-- **统计数据源**: 直接读取 `uni-api` 生成的 SQLite 数据库 (`stats.db`)
+- **统计数据源**: 直接读取 `uni-api` 生成的数据库，支持 SQLite 和 PostgreSQL
 - **包管理器**: pnpm
 - **部署**: Docker & Docker Compose
 
@@ -87,8 +87,20 @@
     # UniAPI 的核心配置文件路径 (绝对路径)
     API_YAML_PATH=/path/to/your/uniapi/config/api.yaml
 
+    # --- 数据库配置 (二选一) ---
+
+    # 1. 使用 SQLite (默认)
+    STATS_DB_TYPE=sqlite
     # UniAPI 生成的统计数据库文件路径 (绝对路径)
     STATS_DB_PATH=/path/to/your/uniapi/data/stats.db
+
+    # 2. 使用 PostgreSQL
+    # STATS_DB_TYPE=postgres
+    # STATS_DB_HOST=localhost
+    # STATS_DB_PORT=5432
+    # STATS_DB_USER=your_postgres_user
+    # STATS_DB_PASSWORD=your_postgres_password
+    # STATS_DB_NAME=your_uniapi_database
 
     # (可选) 指定应用运行端口，默认为 3000
     # PORT=3000
@@ -139,11 +151,18 @@
           - PORT=3000
           # 以下为容器内的路径，与 volumes 挂载点对应
           - API_YAML_PATH=/app/config/api.yaml
-          - STATS_DB_PATH=/app/data/stats.db
+          - STATS_DB_TYPE=sqlite # 或 postgres
+          - STATS_DB_PATH=/app/data/stats.db # 如果使用 sqlite
+          # 如果使用 postgres，请添加以下环境变量
+          # - STATS_DB_HOST=your_postgres_host
+          # - STATS_DB_PORT=5432
+          # - STATS_DB_USER=your_postgres_user
+          # - STATS_DB_PASSWORD=your_postgres_password
+          # - STATS_DB_NAME=your_uniapi_database
         volumes:
           # 将宿主机的 api.yaml 挂载到容器内，需要【读写】权限
           - /path/to/your/uniapi/api.yaml:/app/config/api.yaml
-          # 将宿主机包含 stats.db 的目录挂载到容器内，建议只读【:ro】
+          # 如果使用 sqlite，将宿主机包含 stats.db 的目录挂载到容器内，建议只读【:ro】
           - /path/to/your/uniapi/data:/app/data:ro
     ```
 
@@ -174,11 +193,13 @@ docker run -d \
   -e NODE_ENV=production \
   -e PORT=3000 \
   -e API_YAML_PATH=/app/config/api.yaml \
+  -e STATS_DB_TYPE=sqlite \
   -e STATS_DB_PATH=/app/data/stats.db \
   -v /path/to/your/uniapi/api.yaml:/app/config/api.yaml \
   -v /path/to/your/uniapi/data:/app/data:ro \
   --restart unless-stopped \
   ghcr.io/melosbot/uni-api-status:latest
+# 如果使用 PostgreSQL，请相应修改 -e 参数，并确保容器可以访问数据库
 ```
 
 </details>
@@ -190,7 +211,13 @@ docker run -d \
 | `NODE_ENV`      | 运行环境                            | `production`           |
 | `PORT`          | 容器内应用监听端口                  | `3000`                 |
 | `API_YAML_PATH` | `api.yaml` 在容器内的绝对路径       | `/app/config/api.yaml` |
-| `STATS_DB_PATH` | `stats.db` 在容器内的绝对路径       | `/app/data/stats.db`   |
+| `STATS_DB_TYPE` | 数据库类型 (`sqlite` 或 `postgres`) | `sqlite`               |
+| `STATS_DB_PATH` | `stats.db` 在容器内的绝对路径 (仅当 `STATS_DB_TYPE` 为 `sqlite` 时) | `/app/data/stats.db`   |
+| `STATS_DB_HOST` | PostgreSQL 主机 (仅当 `STATS_DB_TYPE` 为 `postgres` 时) | -                      |
+| `STATS_DB_PORT` | PostgreSQL 端口 (仅当 `STATS_DB_TYPE` 为 `postgres` 时) | `5432`                 |
+| `STATS_DB_USER` | PostgreSQL 用户名 (仅当 `STATS_DB_TYPE` 为 `postgres` 时) | -                      |
+| `STATS_DB_PASSWORD` | PostgreSQL 密码 (仅当 `STATS_DB_TYPE` 为 `postgres` 时) | -                      |
+| `STATS_DB_NAME` | PostgreSQL 数据库名 (仅当 `STATS_DB_TYPE` 为 `postgres` 时) | -                      |
 
 ## 🧭 功能导航
 

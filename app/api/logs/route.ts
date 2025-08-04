@@ -4,13 +4,12 @@
 // 1. 修正了状态筛选逻辑，使其正确处理前端发送的 'true' 或 'false' 字符串。
 
 import { type NextRequest, NextResponse } from "next/server"
-import sqlite3 from "sqlite3"
-import { promisify } from "util"
+import { query } from "@/lib/db"
 
 // 定义从数据库返回的日志行的数据结构
 interface LogRow {
   timestamp: string
-  success_int: 0 | 1
+  success: boolean
   model: string
   provider: string
   processTime: number
@@ -52,32 +51,19 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "API Key is required" }, { status: 400 })
     }
 
-    const dbPath = process.env.STATS_DB_PATH || "/app/data/stats.db"
-    // 以只读模式打开数据库，如果不需要写入的话
-    const db = new sqlite3.Database(dbPath, sqlite3.OPEN_READONLY, (err) => {
-        if (err) {
-            console.error("Error opening database:", err.message);
-            // 如果数据库打开失败，直接返回错误，避免后续操作
-            // 注意：这里的 return 无法直接返回 NextResponse，需要通过抛出错误或设置标志位处理
-            // 简单的处理是继续执行，让后续的 dbAll 捕获错误
-        }
-    });
-
-    const dbAll = promisify(db.all.bind(db)) as (sql: string, params: (string | number | boolean)[]) => Promise<LogRow[]>;
-    const dbClose = promisify(db.close.bind(db))
-
     try {
       // 使用参数化查询以防止 SQL 注入
-      let whereClause = "WHERE r.api_key = ? AND r.endpoint = ?"
+      let whereClauses: string[] = ["r.api_key = $1", "r.endpoint = $2"]
       const params: (string | number | boolean)[] = [apiKey, "POST /v1/chat/completions"]
+      let paramIndex = 3;
 
       if (model) {
-        whereClause += " AND r.model = ?"
+        whereClauses.push(`r.model = $${paramIndex++}`)
         params.push(model)
       }
 
       if (provider) {
-        whereClause += " AND r.provider = ?"
+        whereClauses.push(`r.provider = $${paramIndex++}`)
         params.push(provider)
       }
 
@@ -85,11 +71,11 @@ export async function GET(request: NextRequest) {
       // 将 'true'/'false' 字符串转换为布尔值
       const successStatus = parseBoolean(statusParam);
       if (successStatus !== null) { // 只有当 status 参数有效时才添加条件
-          // SQLite 中布尔值通常存储为 0 或 1
-          whereClause += " AND c.success = ?"
-          params.push(successStatus ? 1 : 0);
+          whereClauses.push(`c.success = $${paramIndex++}`)
+          params.push(successStatus);
       }
-      // 如果 successStatus 为 null (即 status 参数不是 'true' 或 'false'，或者未提供)，则不添加 c.success 条件，返回所有状态
+      
+      const whereClause = `WHERE ${whereClauses.join(" AND ")}`;
 
       const offset = (page - 1) * limit
 
@@ -100,7 +86,7 @@ export async function GET(request: NextRequest) {
         SELECT
           r.timestamp,
           -- 使用 MAX() 聚合函数来处理潜在的重复记录
-          CASE MAX(COALESCE(c.success, 0)) WHEN 1 THEN 1 ELSE 0 END as success_int,
+          MAX(COALESCE(c.success, false)) as success,
           r.model,
           r.provider,
           r.process_time as processTime,
@@ -114,31 +100,21 @@ export async function GET(request: NextRequest) {
         ${whereClause}
         GROUP BY r.request_id -- 通过唯一的请求ID进行分组，防止重复
         ORDER BY r.timestamp DESC
-        LIMIT ? OFFSET ?
+        LIMIT $${paramIndex++} OFFSET $${paramIndex++}
       `;
       const finalParams = [...params, queryLimit, offset];
 
-      const results = await dbAll(sql, finalParams);
-
-      // 处理查询结果，将 success_int 转换为布尔值
-      const processedResults = results.map(row => ({
-        ...row,
-        success: row.success_int === 1 // 将 1 转换为 true, 0 转换为 false
-      }));
+      const results: LogRow[] = await query(sql, finalParams);
 
       // 判断是否有下一页
-      const hasNextPage = processedResults.length > limit
+      const hasNextPage = results.length > limit
       // 如果有下一页，截取所需数量的日志
-      const logs = hasNextPage ? processedResults.slice(0, limit) : processedResults
-
-      await dbClose()
+      const logs = hasNextPage ? results.slice(0, limit) : results
 
       return NextResponse.json({ logs, hasNextPage })
 
     } catch (dbError) {
       console.error("Database query error:", dbError);
-       // 尝试关闭数据库连接，即使出错
-      try { await dbClose(); } catch (closeErr) { console.error("Error closing DB after query error:", closeErr); }
       // 返回更具体的数据库错误信息（生产环境中可能需要屏蔽细节）
       return NextResponse.json({ error: "Database query failed", details: (dbError as Error).message }, { status: 500 })
     }

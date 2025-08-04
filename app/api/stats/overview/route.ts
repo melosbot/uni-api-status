@@ -1,6 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import sqlite3 from "sqlite3"
-import { promisify } from "util"
+import { query } from "@/lib/db"
 
 export async function GET(request: NextRequest) {
   try {
@@ -11,29 +10,21 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "API Key is required" }, { status: 400 })
     }
 
-    const dbPath = process.env.STATS_DB_PATH || "/app/data/stats.db"
-    const db = new sqlite3.Database(dbPath)
-
-    const dbAll = promisify(db.all.bind(db))
-    const dbClose = promisify(db.close.bind(db))
-
     try {
-      const results = await dbAll(
+      const results = await query(
         `
-        SELECT 
+        SELECT
           COUNT(*) as requests,
           COALESCE(SUM(total_tokens), 0) as totalTokens,
           COALESCE(SUM(prompt_tokens), 0) as promptTokens,
           COALESCE(SUM(completion_tokens), 0) as completionTokens,
           COALESCE(AVG(process_time), 0) as avgProcessTime,
           COALESCE(AVG(first_response_time), 0) as avgFirstResponseTime
-        FROM request_stats 
-        WHERE api_key = ? AND endpoint = 'POST /v1/chat/completions'
+        FROM request_stats
+        WHERE api_key = $1 AND endpoint = 'POST /v1/chat/completions'
       `,
         [apiKey],
       )
-
-      await dbClose()
 
       const stats = results[0] || {
         requests: 0,
@@ -46,7 +37,6 @@ export async function GET(request: NextRequest) {
 
       return NextResponse.json(stats)
     } catch (dbError) {
-      await dbClose()
       throw dbError
     }
   } catch (error) {
